@@ -14,6 +14,7 @@ const Header = () => {
     const [txStatus, setTxStatus] = useState({ loading: false, success: false, error: null, hash: null });
 
     const disconnectWallet = () => {
+        // Clear all app state
         setPublicKey("");
         setBalance("0");
         setTransactions([]);
@@ -21,6 +22,13 @@ const Header = () => {
         setSendDestination("");
         setSendAmount("");
         setTxStatus({ loading: false, success: false, error: null, hash: null });
+
+        // Clear browser storage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Reload page to fully sever Freighter connection
+        window.location.reload();
     };
 
     const connectWallet = async () => {
@@ -28,22 +36,34 @@ const Header = () => {
         try {
             const allowed = await checkConnection();
             if (!allowed) {
-                alert('Connection Denied. Please allow access in Freighter.');
+                alert('Connection was not approved. Please try again and allow access in Freighter.');
                 setIsLoading(false);
                 return;
             }
 
             const key = await retrievePublicKey();
             const bal = await getBalance();
-            const txs = await getTransaction(5);
+            const txs = await getTransaction();
 
             setPublicKey(key);
             setBalance(Number(bal).toFixed(2));
             setConnected(true);
             setTransactions(Array.isArray(txs) ? txs : []);
         } catch (error) {
-            console.error(error);
-            alert('An error occurred while connecting. See console for details.');
+            console.error('Wallet connection error:', error);
+            let errorMessage = 'Failed to connect wallet. Please try again.';
+
+            if (error.message?.includes('install') || error.message?.includes('extension') || error.message?.includes('not available')) {
+                errorMessage = 'Freighter wallet extension not found. Please install it from the Chrome Web Store.';
+            } else if (error.message?.includes('undefined') || error.toString().includes('stellar')) {
+                errorMessage = 'Freighter extension is not installed or not enabled. Please check your browser extensions.';
+            } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+                errorMessage = 'Network connection error. Check your internet and try again.';
+            } else if (error.message?.includes('not found') || error.message?.includes('No account')) {
+                errorMessage = 'No Stellar account found. Please create one in Freighter.';
+            }
+
+            alert(errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -65,13 +85,11 @@ const Header = () => {
             const result = await sendTransaction(sendDestination, sendAmount);
             setTxStatus({ loading: false, success: true, error: null, hash: result.hash });
 
-            // Refresh balance and transactions after successfully sending
-            setTimeout(async () => {
-                const bal = await getBalance();
-                const txs = await getTransaction(5);
-                setBalance(Number(bal).toFixed(2));
-                setTransactions(Array.isArray(txs) ? txs : []);
-            }, 3000); // Wait a few seconds for network verification
+            // Immediately refresh balance and transactions
+            const bal = await getBalance();
+            const txs = await getTransaction();
+            setBalance(Number(bal).toFixed(2));
+            setTransactions(Array.isArray(txs) ? txs : []);
 
             setSendDestination("");
             setSendAmount("");
@@ -203,6 +221,12 @@ const Header = () => {
                                         <div className="tx-detail">
                                             <span className="tx-detail-label">TO</span>
                                             <span className="tx-detail-value">{truncateAddress(tx.to || tx.account || tx.funder)}</span>
+                                        </div>
+                                    )}
+                                    {tx.transaction_hash && (
+                                        <div className="tx-detail">
+                                            <span className="tx-detail-label">HASH</span>
+                                            <span className="tx-hash-value">{tx.transaction_hash}</span>
                                         </div>
                                     )}
                                 </li>
